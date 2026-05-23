@@ -1,0 +1,26 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resource/xiangqi/src/xiangqi_canvas.gd" id="1_canvas"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_canvas"]
+size = Vector2(0.76, 0.86)
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_canvas"]
+viewport_path = NodePath("sub_viewport")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_canvas"]
+resource_local_to_scene = true
+transparency = 1
+shading_mode = 0
+albedo_texture = SubResource("ViewportTexture_canvas")
+
+[node name="xiangqi_canvas" type="Node3D"]
+script = ExtResource("1_canvas")
+
+[node name="mesh_instance" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_canvas")
+surface_material_override/0 = SubResource("StandardMaterial3D_canvas")
+
+[node name="sub_viewport" type="SubViewport" parent="."]
+disable_3d = true
+transparent_bg = true

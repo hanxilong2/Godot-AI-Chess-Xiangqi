@@ -1,0 +1,25 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resource/xiangqi/src/actor/xiangqi_piece.gd" id="1_piece"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_body"]
+top_radius = 0.032
+bottom_radius = 0.032
+height = 0.016
+radial_segments = 32
+
+[node name="xiangqi_piece_base" type="CharacterBody3D"]
+script = ExtResource("1_piece")
+
+[node name="piece" type="Node3D" parent="."]
+
+[node name="visual" type="Node3D" parent="piece"]
+
+[node name="body" type="MeshInstance3D" parent="piece"]
+position = Vector3(0, 0.008, 0)
+mesh = SubResource("CylinderMesh_body")
+
+[node name="letter" type="Label3D" parent="piece"]
+position = Vector3(0, 0.016, 0)
+font_size = 56
+text = "?"

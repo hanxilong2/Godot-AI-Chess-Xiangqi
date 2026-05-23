@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resource/xiangqi/src/xiangqi_board.gd" id="1_board"]
+[ext_resource type="PackedScene" path="res://resource/xiangqi/scene/xiangqi_board_display.tscn" id="2_visual"]
+[ext_resource type="PackedScene" path="res://resource/xiangqi/scene/xiangqi_canvas.tscn" id="3_canvas"]
+[ext_resource type="Script" path="res://resource/xiangqi/src/xiangqi_anchor_markers.gd" id="4_anchors"]
+
+[node name="xiangqi_board" type="Node3D"]
+script = ExtResource("1_board")
+
+[node name="board_visual" parent="." instance=ExtResource("2_visual")]
+
+[node name="canvas" parent="." instance=ExtResource("3_canvas")]
+position = Vector3(0, 0.051, -0.005)
+
+[node name="pieces" type="Node3D" parent="."]
+
+[node name="anchors" type="Node3D" parent="."]
+script = ExtResource("4_anchors")
+
+[node name="hints" type="Node3D" parent="."]
+
+[node name="points" type="Node3D" parent="."]

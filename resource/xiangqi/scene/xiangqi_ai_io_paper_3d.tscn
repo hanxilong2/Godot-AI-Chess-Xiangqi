@@ -1,0 +1,32 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resource/xiangqi/src/xiangqi_ai_io_paper_3d.gd" id="1_paper"]
+[ext_resource type="PackedScene" uid="uid://do4fh5wn44g5k" path="res://assets/model/stack_of_paper/uploads_files_6242704_StackOfPaper.fbx" id="2_stack"]
+[ext_resource type="PackedScene" path="res://resource/xiangqi/scene/doc/xiangqi_ai_io_sheet.tscn" id="3_sheet"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_sheet"]
+size = Vector2(0.232, 0.324)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sheet"]
+resource_local_to_scene = true
+transparency = 1
+shading_mode = 0
+
+[node name="xiangqi_ai_io_paper_3d" type="Node3D"]
+script = ExtResource("1_paper")
+
+[node name="paper_stack" parent="." instance=ExtResource("2_stack")]
+
+[node name="sheet_surface" type="MeshInstance3D" parent="paper_stack"]
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_sheet")
+surface_material_override/0 = SubResource("StandardMaterial3D_sheet")
+
+[node name="sub_viewport" type="SubViewport" parent="."]
+disable_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(1100, 1550)
+render_target_update_mode = 1
+
+[node name="xiangqi_ai_io_sheet" parent="sub_viewport" instance=ExtResource("3_sheet")]

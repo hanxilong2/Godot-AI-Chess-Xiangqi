@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://c6c0qcotsv4dq" path="res://assets/model/xiangqi/piece_set/象棋.fbx" id="1_12j2a"]
+
+[ext_resource type="Script" path="res://resource/xiangqi/src/xiangqi_board_display_auto_import.gd" id="2_xiangqi"]
+
+[node name="xiangqi_board_display" type="Node3D"]
+script = ExtResource("2_xiangqi")
+
+[node name="xiangqi_model" parent="." instance=ExtResource("1_12j2a")]
+transform = Transform3D(0.11, 0, 0, 0, 0.11, 0, 0, 0, 0.11, 0, 0.024, -0.347)
