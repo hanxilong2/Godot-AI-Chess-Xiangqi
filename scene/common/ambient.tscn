@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://gfun334mrite"]
+
+[ext_resource type="Script" uid="uid://dx7i5uox3fqux" path="res://src/common/ambient.gd" id="1_14124"]
+
+[node name="ambient" type="Node" unique_id=868214806]
+script = ExtResource("1_14124")

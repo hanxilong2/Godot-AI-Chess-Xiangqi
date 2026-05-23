@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://cuiysu2wi6kbe"]
+
+[ext_resource type="FontFile" uid="uid://cmbwnmrpuigxx" path="res://assets/fonts/FangZhengShuSongJianTi-1.ttf" id="1_2xl4e"]
+[ext_resource type="Script" uid="uid://caht1l7bjk0iq" path="res://src/ui/toast.gd" id="1_7jftj"]
+
+[sub_resource type="Gradient" id="Gradient_j3y3i"]
+offsets = PackedFloat32Array(0)
+colors = PackedColorArray(0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_7jftj"]
+gradient = SubResource("Gradient_j3y3i")
+
+[sub_resource type="LabelSettings" id="LabelSettings_mg70v"]
+font_size = 26
+
+[node name="toast" type="CanvasLayer" unique_id=1900320128]
+layer = 40
+script = ExtResource("1_7jftj")
+
+[node name="texture_rect" type="TextureRect" parent="." unique_id=1743688345]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+texture = SubResource("GradientTexture1D_7jftj")
+expand_mode = 1
+stretch_mode = 1
+metadata/_edit_lock_ = true
+
+[node name="label" type="Label" parent="texture_rect" unique_id=970086305]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("1_2xl4e")
+text = "INPUT_PROMPT"
+label_settings = SubResource("LabelSettings_mg70v")
+horizontal_alignment = 1
+vertical_alignment = 1
