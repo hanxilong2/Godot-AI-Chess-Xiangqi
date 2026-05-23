@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://b7uycfov8t6ed"]
+
+[ext_resource type="PackedScene" uid="uid://b6l1w8csg7tim" path="res://assets/model/piece_rook.glb" id="1_4fjsw"]
+[ext_resource type="Script" uid="uid://pofjvdbbj3iy" path="res://resource/chess/src/actor/piece.gd" id="2_fmjvr"]
+[ext_resource type="Shader" uid="uid://dd7xsr1eeq6mo" path="res://src/shaders/unmoving_plaid.gdshader" id="3_xnumi"]
+[ext_resource type="Texture2D" uid="uid://dc1bupw2qibgu" path="res://assets/texture/Texturelabs_Paper_374S.jpg" id="4_vkbgt"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xnumi"]
+cull_mode = 1
+shading_mode = 0
+albedo_color = Color(0, 0, 0, 1)
+grow = true
+grow_amount = 0.003
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_217ym"]
+render_priority = 0
+next_pass = SubResource("StandardMaterial3D_xnumi")
+shader = ExtResource("3_xnumi")
+shader_parameter/texture_albedo = ExtResource("4_vkbgt")
+shader_parameter/scale = 1.0
+shader_parameter/hue_shift = 0.0
+shader_parameter/saturation_mult = 1.0
+shader_parameter/value_mult = 1.0
+shader_parameter/brightness_add = -0.055
+shader_parameter/contrast_mult = 1.0
+
+[node name="piece_rook" unique_id=1521051294 instance=ExtResource("1_4fjsw")]
+script = ExtResource("2_fmjvr")
+
+[node name="piece" parent="." index="0" unique_id=169348020]
+surface_material_override/0 = SubResource("ShaderMaterial_217ym")
