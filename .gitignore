@@ -1,0 +1,20 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+/build/
+/tmp/
+.sconsign.dblite
+.vscode/
+*.log
+/bin/~*
+/bin/Windows/
+/bin/windows/
+/bin/web/
+/bin/android/
+/bin/*.zip
+/bin/*.a
+/bin/*.exp
+/bin/*.lib
+/src/core/*.o
+/src/core/*.windows.*.obj
+/src/core/*.windows.*.obj.import
