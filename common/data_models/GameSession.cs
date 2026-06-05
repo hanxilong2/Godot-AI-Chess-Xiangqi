@@ -149,32 +149,6 @@ namespace ChessAI.DataModels
         public int GetMoveCount() => MoveHistory.Count;
 
         /// <summary>
-        /// 获取红方走法数量
-        /// </summary>
-        public int GetRedMoveCount()
-        {
-            int count = 0;
-            foreach (var move in MoveHistory)
-            {
-                if (move.Side == 0) count++;
-            }
-            return count;
-        }
-
-        /// <summary>
-        /// 获取黑方走法数量
-        /// </summary>
-        public int GetBlackMoveCount()
-        {
-            int count = 0;
-            foreach (var move in MoveHistory)
-            {
-                if (move.Side == 1) count++;
-            }
-            return count;
-        }
-
-        /// <summary>
         /// 获取指定方走法数量
         /// </summary>
         public int GetSideMoveCount(int side)
@@ -212,24 +186,6 @@ namespace ChessAI.DataModels
         {
             move.MoveNumber = (MoveHistory.Count + 2) / 2;
             MoveHistory.Add(move);
-        }
-
-        /// <summary>
-        /// 获取格式化的走法历史（用于显示）
-        /// </summary>
-        public string GetFormattedMoveHistory()
-        {
-            if (MoveHistory.Count == 0)
-            {
-                return "(暂无落子记录)";
-            }
-
-            var result = new System.Text.StringBuilder();
-            foreach (var move in MoveHistory)
-            {
-                result.AppendLine($"  第{move.MoveNumber}回合 {GetSideName(move.Side)}: {move.ChineseNotation}");
-            }
-            return result.ToString();
         }
 
         /// <summary>

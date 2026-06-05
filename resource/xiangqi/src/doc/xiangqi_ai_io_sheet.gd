@@ -466,12 +466,6 @@ func _make_text_edit_style(focused: bool) -> StyleBoxFlat:
 
 func _role_info(role: String) -> Dictionary:
 	match role:
-		"ai_agent":
-			return {
-				"label": tr("AI_IO_ROLE_AI_REPLY"),
-				"color": Color(0.13, 0.27, 0.50, 1.0),
-				"fill": Color(0.13, 0.27, 0.50, 0.08),
-			}
 		"chat_ai":
 			return {
 				"label": tr("AI_IO_ROLE_CHAT"),

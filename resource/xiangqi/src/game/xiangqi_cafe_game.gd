@@ -31,12 +31,6 @@ const RADIO_MUSIC_OPTION_EXIT := "RADIO_MUSIC_OPTION_EXIT"
 const RADIO_MUSIC_VOLUME_HIGH := "high"
 const RADIO_MUSIC_VOLUME_MEDIUM := "medium"
 const RADIO_MUSIC_VOLUME_LOW := "low"
-const AI_AGENT_TOOL_NAMES := [
-	"chat_with_player",
-	"review_game",
-	"banter_with_player",
-]
-
 enum MatchPhase {
 	IDLE,
 	PLAYER_TURN,
@@ -52,11 +46,11 @@ enum MatchPhase {
 @export var relax_ai_movetime_ms: int = 250
 @export var relax_ai_search_depth: int = 2
 @export_range(0, 20, 1) var relax_ai_skill_level: int = 3
-@export var ai_agent_analysis_depth: int = 2
-@export var ai_agent_analysis_movetime_ms: int = 120
-@export var wait_for_ai_agent_before_pikafish: bool = true
-@export var ai_agent_wait_timeout_sec: float = 120.0
-@export var ai_agent_analysis_delay_sec: float = 0.5
+@export var banter_analysis_depth: int = 2
+@export var banter_analysis_movetime_ms: int = 120
+@export var wait_for_banter_before_pikafish: bool = true
+@export var banter_wait_timeout_sec: float = 120.0
+@export var banter_analysis_delay_sec: float = 0.5
 @export var player_move_notation_refresh_delay_sec: float = 0.36
 
 @onready var board: XiangqiBoard = $table_0/xiangqi_board_standard
@@ -93,10 +87,10 @@ var _ai_turn_queued := false
 var _engine_game_started := false
 var _ai_turn_serial := 0
 var _ai_search_in_progress := false
-var _waiting_for_ai_agent_reply := false
-var _ai_agent_wait_serial := 0
-var _ai_agent_wait_move_count := -1
-var _ai_agent_analysis_queued := false
+var _waiting_for_banter_reply := false
+var _banter_wait_serial := 0
+var _banter_wait_move_count := -1
+var _banter_analysis_queued := false
 var _suppress_turn_flow := false
 var _in_match := false
 var _board_idle_transform := Transform3D.IDENTITY
@@ -319,7 +313,7 @@ func start_cafe_game(side: int = XiangqiConstants.RED, fen: String = "", play_in
 	board.clear_selection()
 	_refresh_notation_paper()
 	_reset_ai_io_paper(_match_initial_fen)
-	_refresh_ai_agent_banter_prompt_side()
+	_refresh_banter_prompt_side()
 	player.force_set_camera(board_camera)
 	player.can_move = false
 	_show_match_ui(true)
@@ -367,7 +361,7 @@ func undo_turn() -> bool:
 
 	last_ai_move_text = ""
 	last_feedback = tr("XQ_UNDONE")
-	_queue_ai_agent_banter_after_undo(undone, ", ".join(undone_move_texts))
+	_queue_banter_after_undo(undone, ", ".join(undone_move_texts))
 	_advance_turn_flow()
 	_refresh_match_ui()
 	return true
@@ -443,10 +437,10 @@ func _archive_current_game_memory_on_leave() -> void:
 
 func _prepare_for_scene_change() -> void:
 	_cancel_pending_ai_turn()
-	_waiting_for_ai_agent_reply = false
-	_ai_agent_analysis_queued = false
-	_ai_agent_wait_serial += 1
-	_ai_agent_wait_move_count = -1
+	_waiting_for_banter_reply = false
+	_banter_analysis_queued = false
+	_banter_wait_serial += 1
+	_banter_wait_move_count = -1
 	_ai_chat_waiting = false
 	_ai_review_waiting = false
 	_game_end_review_requested = false
@@ -756,9 +750,9 @@ func _initialize_chess_ai() -> void:
 	chess_ai_wrapper.ai_response.connect(_on_chess_ai_response)
 	chess_ai_wrapper.review_generated.connect(_on_chess_ai_review_generated)
 	add_child(chess_ai_wrapper)
-	_refresh_ai_agent_banter_prompt_side()
+	_refresh_banter_prompt_side()
 
-func _refresh_ai_agent_banter_prompt_side() -> void:
+func _refresh_banter_prompt_side() -> void:
 	if chess_ai_wrapper == null or !chess_ai_wrapper.is_available():
 		return
 	chess_ai_wrapper.set_banter_player_side(human_side)
@@ -793,7 +787,7 @@ func _initialize_api_key_ui() -> void:
 
 func _show_api_key_screen() -> void:
 	_set_api_key_screen_visible(true)
-	_refresh_ai_agent_banter_prompt_side()
+	_refresh_banter_prompt_side()
 	if player != null:
 		player.can_move = false
 	if board != null:
@@ -882,7 +876,7 @@ func _on_board_move_applied(move: XiangqiMove) -> void:
 		_refresh_notation_paper()
 	else:
 		_queue_notation_paper_refresh_after_player_move()
-		_queue_ai_agent_analysis_after_move(move)
+		_queue_banter_analysis_after_move(move)
 	_advance_turn_flow()
 	_refresh_match_ui()
 
@@ -933,11 +927,11 @@ func _advance_turn_flow() -> void:
 		_sync_board_interaction()
 
 func _begin_ai_turn(immediate: bool = false) -> void:
-	if _waiting_for_ai_agent_reply:
+	if _waiting_for_banter_reply:
 		phase = MatchPhase.AI_THINKING
 		board.clear_selection()
 		_sync_board_interaction()
-		_refresh_match_ui(tr("XQ_AI_AGENT_REPLYING"))
+		_refresh_match_ui(tr("XQ_AI_BANTER_REPLYING"))
 		return
 	if _ai_turn_queued or phase == MatchPhase.AI_THINKING:
 		return
@@ -1026,7 +1020,7 @@ func _can_undo_now() -> bool:
 		return false
 	if _is_checkmate_position():
 		return false
-	if _ai_search_in_progress or _ai_turn_queued or _applying_ai_move or _waiting_for_ai_agent_reply or _ai_review_waiting or _game_end_review_requested:
+	if _ai_search_in_progress or _ai_turn_queued or _applying_ai_move or _waiting_for_banter_reply or _ai_review_waiting or _game_end_review_requested:
 		return false
 	if !ai_enabled:
 		return true
@@ -1041,7 +1035,7 @@ func _is_checkmate_position() -> bool:
 	return status == "checkmate" or status == "stalemate"
 
 func _cancel_pending_ai_turn() -> void:
-	_cancel_ai_agent_reply_wait()
+	_cancel_banter_reply_wait()
 	_ai_turn_serial += 1
 	_ai_turn_queued = false
 	_ai_search_in_progress = false
@@ -1183,10 +1177,10 @@ func _reset_ai_io_paper(fen: String) -> void:
 		_append_ai_io_entry("player", tr("XQ_INPUT_FEN") % fen)
 
 func _append_ai_io_entry(role: String, text: String) -> void:
-	if !["ai_agent", "review", "error", "system", "player", "ai"].has(role):
+	if !["review", "error", "system", "player", "ai"].has(role):
 		return
 	var clean_text := text.strip_edges()
-	if ["ai_agent", "review", "error", "ai"].has(role):
+	if ["review", "error", "ai"].has(role):
 		clean_text = _clean_ai_io_visible_text(clean_text)
 		if _is_internal_ai_io_text(clean_text):
 			return
@@ -1312,11 +1306,7 @@ func _is_internal_ai_io_text(text: String) -> bool:
 	var lower_text := clean_text.to_lower()
 	if ["no_response", "none", "null"].has(lower_text):
 		return true
-	if AI_AGENT_TOOL_NAMES.has(lower_text):
-		return true
 	if clean_text == tr("XQ_AI_THINKING_ENTRY") or clean_text == "Thinking about the next move.":
-		return true
-	if lower_text.begins_with("tool_call") or lower_text.begins_with("agent selected tool"):
 		return true
 	return false
 
@@ -1369,7 +1359,7 @@ func _human_result_text(result: String) -> String:
 		return tr("HUMAN_RESULT_WIN") if human_side == XiangqiConstants.BLACK else tr("HUMAN_RESULT_LOSS")
 	return ""
 
-func _queue_ai_agent_analysis_after_move(move: XiangqiMove) -> void:
+func _queue_banter_analysis_after_move(move: XiangqiMove) -> void:
 	if move == null or _applying_ai_move:
 		return
 	if chess_ai_wrapper == null or !chess_ai_wrapper.is_available():
@@ -1380,33 +1370,33 @@ func _queue_ai_agent_analysis_after_move(move: XiangqiMove) -> void:
 		return
 	var expected_move_count := board.state.move_history.size() if board != null and board.state != null else -1
 	var wait_serial := -1
-	if _should_gate_ai_agent_before_pikafish():
-		_begin_ai_agent_reply_wait()
-		_ai_agent_analysis_queued = true
-		wait_serial = _ai_agent_wait_serial
+	if _should_gate_banter_before_pikafish():
+		_begin_banter_reply_wait()
+		_banter_analysis_queued = true
+		wait_serial = _banter_wait_serial
 	call_deferred("_notify_ai_about_move_after_animation", move.duplicate(), expected_move_count, wait_serial)
 
 func _notify_ai_about_move_after_animation(move: XiangqiMove, expected_move_count: int, wait_serial: int) -> void:
-	if ai_agent_analysis_delay_sec > 0.0:
-		await get_tree().create_timer(ai_agent_analysis_delay_sec).timeout
+	if banter_analysis_delay_sec > 0.0:
+		await get_tree().create_timer(banter_analysis_delay_sec).timeout
 	var uses_wait_gate := wait_serial >= 0
-	if uses_wait_gate and (!_waiting_for_ai_agent_reply or wait_serial != _ai_agent_wait_serial):
+	if uses_wait_gate and (!_waiting_for_banter_reply or wait_serial != _banter_wait_serial):
 		return
 	if !_in_match or board == null or board.state == null:
 		if uses_wait_gate:
-			_finish_ai_agent_reply_wait()
+			_finish_banter_reply_wait()
 		return
 	if expected_move_count >= 0 and board.state.move_history.size() != expected_move_count:
 		if uses_wait_gate:
-			_finish_ai_agent_reply_wait()
+			_finish_banter_reply_wait()
 		return
-	_ai_agent_analysis_queued = false
+	_banter_analysis_queued = false
 	var wait_for_reply: bool = await _notify_ai_about_move(move)
 	if uses_wait_gate and !wait_for_reply:
-		_finish_ai_agent_reply_wait()
+		_finish_banter_reply_wait()
 
-func _should_gate_ai_agent_before_pikafish() -> bool:
-	if !wait_for_ai_agent_before_pikafish:
+func _should_gate_banter_before_pikafish() -> bool:
+	if !wait_for_banter_before_pikafish:
 		return false
 	if !ai_enabled or !_is_ai_turn():
 		return false
@@ -1434,7 +1424,7 @@ func _notify_ai_about_move(move: XiangqiMove) -> bool:
 	if undone_move == null or !undone_move.is_valid():
 		return false
 
-	var engine_analysis: Dictionary = await _analyze_player_move_for_ai_agent(before_state, after_state, move)
+	var engine_analysis: Dictionary = await _analyze_player_move_for_banter(before_state, after_state, move)
 	if !_in_match or chess_ai_wrapper == null or !chess_ai_wrapper.is_available():
 		return false
 	var session: Dictionary = chess_ai_wrapper.create_game_session(after_state, human_side, ai_enabled, _notation_initial_state)
@@ -1453,11 +1443,11 @@ func _notify_ai_about_move(move: XiangqiMove) -> bool:
 		if !move_history.is_empty():
 			move_history[move_history.size() - 1] = move_record
 
-	var should_wait_for_reply: bool = _should_wait_for_ai_agent_reply()
+	var should_wait_for_reply: bool = _should_wait_for_banter_reply()
 	var request_sent := chess_ai_wrapper.send_move_played(move_record, session)
 	return request_sent and should_wait_for_reply
 
-func _queue_ai_agent_banter_after_undo(undone_count: int, undone_move_text: String) -> void:
+func _queue_banter_after_undo(undone_count: int, undone_move_text: String) -> void:
 	if undone_count <= 0:
 		return
 	if chess_ai_wrapper == null:
@@ -1474,42 +1464,42 @@ func _queue_ai_agent_banter_after_undo(undone_count: int, undone_move_text: Stri
 	session["UndoneMovesText"] = undone_move_text
 	chess_ai_wrapper.send_undo_performed(session, undone_count, undone_move_text)
 
-func _should_wait_for_ai_agent_reply() -> bool:
-	if !wait_for_ai_agent_before_pikafish:
+func _should_wait_for_banter_reply() -> bool:
+	if !wait_for_banter_before_pikafish:
 		return false
 	if !ai_enabled or !_is_ai_turn():
 		return false
 	return true
 
-func _begin_ai_agent_reply_wait() -> void:
-	if _waiting_for_ai_agent_reply:
+func _begin_banter_reply_wait() -> void:
+	if _waiting_for_banter_reply:
 		return
-	_waiting_for_ai_agent_reply = true
-	_ai_agent_analysis_queued = false
-	_ai_agent_wait_serial += 1
-	_ai_agent_wait_move_count = board.state.move_history.size() if board != null and board.state != null else -1
+	_waiting_for_banter_reply = true
+	_banter_analysis_queued = false
+	_banter_wait_serial += 1
+	_banter_wait_move_count = board.state.move_history.size() if board != null and board.state != null else -1
 	phase = MatchPhase.AI_THINKING
 	if board != null:
 		board.clear_selection()
 	_sync_board_interaction()
-	_refresh_match_ui(tr("XQ_AI_AGENT_REPLYING"))
-	if ai_agent_wait_timeout_sec > 0.0:
-		call_deferred("_release_ai_agent_wait_after_timeout", _ai_agent_wait_serial)
+	_refresh_match_ui(tr("XQ_AI_BANTER_REPLYING"))
+	if banter_wait_timeout_sec > 0.0:
+		call_deferred("_release_banter_wait_after_timeout", _banter_wait_serial)
 
-func _release_ai_agent_wait_after_timeout(wait_serial: int) -> void:
-	await get_tree().create_timer(ai_agent_wait_timeout_sec).timeout
-	if !_waiting_for_ai_agent_reply or wait_serial != _ai_agent_wait_serial:
+func _release_banter_wait_after_timeout(wait_serial: int) -> void:
+	await get_tree().create_timer(banter_wait_timeout_sec).timeout
+	if !_waiting_for_banter_reply or wait_serial != _banter_wait_serial:
 		return
-	_finish_ai_agent_reply_wait()
+	_finish_banter_reply_wait()
 
-func _finish_ai_agent_reply_wait() -> void:
-	if !_waiting_for_ai_agent_reply:
+func _finish_banter_reply_wait() -> void:
+	if !_waiting_for_banter_reply:
 		return
-	_waiting_for_ai_agent_reply = false
-	_ai_agent_analysis_queued = false
-	_ai_agent_wait_serial += 1
-	var expected_move_count := _ai_agent_wait_move_count
-	_ai_agent_wait_move_count = -1
+	_waiting_for_banter_reply = false
+	_banter_analysis_queued = false
+	_banter_wait_serial += 1
+	var expected_move_count := _banter_wait_move_count
+	_banter_wait_move_count = -1
 	if board == null or board.state == null:
 		_advance_turn_flow()
 		_flush_pending_ai_review()
@@ -1534,56 +1524,52 @@ func _finish_ai_agent_reply_wait() -> void:
 	_begin_ai_turn(true)
 	_flush_pending_ai_review()
 
-func _cancel_ai_agent_reply_wait() -> void:
-	if !_waiting_for_ai_agent_reply:
+func _cancel_banter_reply_wait() -> void:
+	if !_waiting_for_banter_reply:
 		return
-	_waiting_for_ai_agent_reply = false
-	_ai_agent_analysis_queued = false
-	_ai_agent_wait_serial += 1
-	_ai_agent_wait_move_count = -1
+	_waiting_for_banter_reply = false
+	_banter_analysis_queued = false
+	_banter_wait_serial += 1
+	_banter_wait_move_count = -1
 
 func _on_chess_ai_response(response_type: String, content: String) -> void:
 	var clean_type := response_type.strip_edges()
 	var lower_type := clean_type.to_lower()
 	var clean_content := _clean_ai_io_visible_text(content)
 	if lower_type == "none":
-		if _waiting_for_ai_agent_reply:
-			_finish_ai_agent_reply_wait()
+		if _waiting_for_banter_reply:
+			_finish_banter_reply_wait()
 		return
-	if !(lower_type in ["chat", "banter", "review", "error"]):
+	if !(lower_type in ["chat", "banter", "error"]):
 		return
 	if clean_content.is_empty() or _is_internal_ai_io_text(clean_content):
-		if _waiting_for_ai_agent_reply and lower_type in ["banter", "error"]:
-			_finish_ai_agent_reply_wait()
+		if _waiting_for_banter_reply and lower_type in ["banter", "error"]:
+			_finish_banter_reply_wait()
 		return
 	if lower_type == "chat" or (_ai_chat_waiting and lower_type == "error"):
 		_ai_chat_waiting = false
 		_set_ai_io_chat_response("chat_error" if lower_type == "error" else "chat_ai", clean_content)
-		if _waiting_for_ai_agent_reply and lower_type == "error":
-			_finish_ai_agent_reply_wait()
-		return
-	if _ai_chat_waiting and lower_type in ["review", "banter"]:
-		_ai_chat_waiting = false
-		_set_ai_io_chat_response("chat_ai", _format_ai_response_display_text(clean_type, clean_content))
+		if _waiting_for_banter_reply and lower_type == "error":
+			_finish_banter_reply_wait()
 		return
 	if _ai_review_waiting and lower_type == "error":
 		_ai_review_waiting = false
 		_game_end_review_requested = false
 		_game_end_review_generated = false
 		last_feedback = tr("XQ_REVIEW_FAILED")
-		if _waiting_for_ai_agent_reply:
+		if _waiting_for_banter_reply:
 			_pending_review_content = "[%s]\n%s" % [clean_type, clean_content]
 			_pending_review_data = ""
-			_finish_ai_agent_reply_wait()
+			_finish_banter_reply_wait()
 		else:
 			_set_ai_io_response("error", "[%s]\n%s" % [clean_type, clean_content])
 		_refresh_match_ui()
 		return
 	var display_text := _format_ai_response_display_text(clean_type, clean_content)
-	var role := "error" if lower_type == "error" else ("review" if lower_type == "review" else "ai_agent")
+	var role := "error" if lower_type == "error" else "ai"
 	_set_ai_io_response(role, display_text)
-	if _waiting_for_ai_agent_reply and lower_type in ["banter", "error"]:
-		_finish_ai_agent_reply_wait()
+	if _waiting_for_banter_reply and lower_type in ["banter", "error"]:
+		_finish_banter_reply_wait()
 
 func _on_chess_ai_review_generated(review_content: String, _review_data: String) -> void:
 	var clean_content := review_content.strip_edges()
@@ -1596,7 +1582,7 @@ func _on_chess_ai_review_generated(review_content: String, _review_data: String)
 	if _game_end_result.is_empty() and board != null and board.state != null:
 		_game_end_status = XiangqiRules.get_position_status(board.state)
 		_game_end_result = _game_result_text(_game_end_status)
-	if _waiting_for_ai_agent_reply:
+	if _waiting_for_banter_reply:
 		_pending_review_content = _format_ai_response_display_text("review", clean_content)
 		_pending_review_data = _review_data
 		return
@@ -1762,7 +1748,7 @@ func _wait_for_active_pikafish_threads() -> void:
 		thread.wait_to_finish()
 		_joined_pikafish_threads.push_back(thread)
 
-func _analyze_player_move_for_ai_agent(before_state: XiangqiState, after_state: XiangqiState, played_move: XiangqiMove) -> Dictionary:
+func _analyze_player_move_for_banter(before_state: XiangqiState, after_state: XiangqiState, played_move: XiangqiMove) -> Dictionary:
 	var result: Dictionary = {
 		"evaluation_score": 0,
 		"best_move": "",
@@ -1780,8 +1766,8 @@ func _analyze_player_move_for_ai_agent(before_state: XiangqiState, after_state: 
 			before_state.duplicate(),
 			after_state.duplicate(),
 			played_move.duplicate(),
-			ai_agent_analysis_movetime_ms,
-			ai_agent_analysis_depth,
+			banter_analysis_movetime_ms,
+			banter_analysis_depth,
 		]
 	)
 	if !bool(threaded_result.get("ok", false)):
@@ -1791,22 +1777,6 @@ func _analyze_player_move_for_ai_agent(before_state: XiangqiState, after_state: 
 	result["evaluation_score"] = int(result.get("evaluation_score", 0))
 	result["best_move"] = String(result.get("best_move", ""))
 	return result
-
-func _analysis_best_move_text(analysis: Dictionary) -> String:
-	var best_move := analysis.get("bestmove") as XiangqiMove
-	if best_move != null and best_move.is_valid():
-		return best_move.to_coordinate_string()
-	return String(analysis.get("bestmove_text", ""))
-
-func _format_best_move_for_ai_agent(analysis: Dictionary, state: XiangqiState) -> String:
-	var best_move := analysis.get("bestmove") as XiangqiMove
-	if best_move == null or !best_move.is_valid():
-		return String(analysis.get("bestmove_text", ""))
-	var coordinate := best_move.to_coordinate_string()
-	var notation := XiangqiNotation.move_to_chinese(state, best_move)
-	if notation.is_empty():
-		return coordinate
-	return "%s (%s)" % [notation, coordinate]
 
 func _capture_match_view_setup() -> void:
 	if board == null:

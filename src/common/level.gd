@@ -117,7 +117,6 @@ func _ready() -> void:
 	premove_state_machine.add_state("from", state_premove_from_ready, state_premove_from_exit)
 	premove_state_machine.add_state("to", state_premove_to_ready)
 	premove_state_machine.add_state("extra", state_premove_extra_ready, state_premove_extra_exit)
-	premove_state_machine.add_state("select_piece", state_premove_select_piece_ready)
 	premove_state_machine.add_state("confirm", state_premove_confirm_ready)
 	premove_state_machine.add_state("stop", state_premove_stop_ready)
 	premove_state_machine.name = "premove"
@@ -177,10 +176,6 @@ func state_premove_from_ready(_arg:Dictionary) -> void:
 		premove_branch.future_state = chessboard.state.duplicate()
 		premove_branch.move_order = []
 	)
-	#if can_introduce:
-	#	premove_state_machine.state_signal_connect(chessboard.empty_double_click, func () -> void:
-	#		premove_state_machine.change_state.call_deferred("select_piece", {"by": chessboard.selected})
-	#	)
 	chessboard.set_square_selection(start_from)
 
 func state_premove_from_exit() -> void:
@@ -221,9 +216,6 @@ func state_premove_extra_ready(_arg:Dictionary) -> void:
 
 func state_premove_extra_exit() -> void:
 	Dialog.clear()
-
-func state_premove_select_piece_ready(_arg:Dictionary) -> void:
-	pass
 
 func state_premove_confirm_ready(_arg:Dictionary) -> void:
 	premove_from = -1

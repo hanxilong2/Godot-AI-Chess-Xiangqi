@@ -3,16 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using ChessAI.DataModels;
 using ChessAI.Module.Core;
 using ChessAI.Module.Services;
 
 namespace ChessAI.Module
 {
-    /// <summary>
-    /// AI模块入口节点
-    /// 作为Godot Autoload单例运行，实现IChessAI接口
-    /// </summary>
     public partial class AI_Module_Entry : Node, IChessAI
     {
         [Signal]
@@ -21,10 +18,12 @@ namespace ChessAI.Module
         [Signal]
         public delegate void ReviewGeneratedReceivedEventHandler(string reviewContent, string reviewData);
 
-        private AgentOrchestrator _orchestrator;
         private LlmApiService _llmService;
         private PromptLoader _promptLoader;
         private MemoryService _memoryService;
+        private ChatAgent _chatAgent;
+        private BanterAgent _banterAgent;
+        private ReviewAgent _reviewAgent;
         private bool _isExiting;
         private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {
@@ -36,15 +35,15 @@ namespace ChessAI.Module
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[AI_Module_Entry] 初始化AI模块...");
+                GD.Print("[AI_Module_Entry] Initializing AI module.");
             }
 
             InitializeServices();
-            InitializeOrchestrator();
+            InitializeAgents();
 
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[AI_Module_Entry] AI模块初始化完成");
+                GD.Print("[AI_Module_Entry] AI module initialized.");
             }
         }
 
@@ -56,75 +55,61 @@ namespace ChessAI.Module
 
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[AI_Module_Entry] 服务层初始化完成");
+                GD.Print("[AI_Module_Entry] Services initialized.");
             }
         }
 
-        private void InitializeOrchestrator()
+        private void InitializeAgents()
         {
-            _orchestrator = new AgentOrchestrator(_llmService, _promptLoader, _memoryService);
+            _chatAgent = new ChatAgent(_llmService, _promptLoader, _memoryService);
+            _banterAgent = new BanterAgent(_llmService, _promptLoader, _memoryService);
+            _reviewAgent = new ReviewAgent(_llmService, _promptLoader, _memoryService);
 
-            _orchestrator.OnAIResponse += (sender, args) =>
+            if (AI_Module_Config.DEBUG_MODE)
             {
-                if (_isExiting || !IsInsideTree())
+                GD.Print("[AI_Module_Entry] Chat, banter, and review agents initialized.");
+            }
+        }
+
+        public async void OnPlayerMessage(string message, GameSession session)
+        {
+            if (AI_Module_Config.DEBUG_MODE)
+            {
+                GD.Print("[AI_Module_Entry] Player chat requested.");
+            }
+
+            try
+            {
+                if (_isExiting)
                 {
                     return;
                 }
 
-                if (AI_Module_Config.DEBUG_MODE)
+                if (!AI_Module_Config.HasApiKey())
                 {
-                    GD.Print($"[AI_Module_Entry] AI响应: {args.ResponseType}");
+                    RaiseAIResponse("error", ApiKeyRequiredMessage());
+                    return;
                 }
 
-                if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
-                {
-                    GD.Print($"[AI_Module_Entry] 内容: {args.Content}");
-                }
-
-                OnAIResponse?.Invoke(this, args);
-                CallDeferred(nameof(EmitAiResponseSignal), args.ResponseType, args.Content);
-            };
-
-            _orchestrator.OnReviewGenerated += (sender, args) =>
+                var response = await _chatAgent.ProcessMessageAsync(message ?? "", session ?? new GameSession());
+                RaiseAIResponse("chat", response);
+            }
+            catch (OperationCanceledException) when (_isExiting)
             {
-                if (_isExiting || !IsInsideTree())
+            }
+            catch (ObjectDisposedException) when (_isExiting)
+            {
+            }
+            catch (Exception ex)
+            {
+                if (_isExiting)
                 {
                     return;
                 }
 
-                if (AI_Module_Config.DEBUG_MODE)
-                {
-                    GD.Print("[AI_Module_Entry] 复盘生成完成");
-                }
-
-                if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
-                {
-                    GD.Print($"[AI_Module_Entry] 复盘内容: {args.ReviewContent}");
-                }
-
-                OnReviewGenerated?.Invoke(this, args);
-                CallDeferred(nameof(EmitReviewGeneratedSignal), args.ReviewContent, args.ReviewData);
-            };
-
-            if (AI_Module_Config.DEBUG_MODE)
-            {
-                GD.Print("[AI_Module_Entry] 调度器初始化完成");
+                GD.PrintErr($"[AI_Module_Entry] Player chat failed: {ex.Message}");
+                RaiseAIResponse("error", GenericFailureMessage());
             }
-        }
-
-        public void OnPlayerMessage(string message, GameSession session)
-        {
-            if (AI_Module_Config.DEBUG_MODE)
-            {
-                GD.Print("[AI_Module_Entry] 收到玩家消息");
-            }
-
-            if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
-            {
-                GD.Print($"[AI_Module_Entry] 玩家消息内容: {message}");
-            }
-
-            _orchestrator?.HandlePlayerMessage(message, session);
         }
 
         public void OnPlayerMessageJson(string message, string sessionJson)
@@ -133,16 +118,65 @@ namespace ChessAI.Module
             OnPlayerMessage(message, session);
         }
 
-        public void OnMovePlayed(MoveRecord moveRecord, GameSession session)
+        public async void OnMovePlayed(MoveRecord moveRecord, GameSession session)
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 玩家走棋: {moveRecord.ChineseNotation}");
-                GD.Print($"[AI_Module_Entry] 评估分数: {moveRecord.EvaluationScore}");
-                GD.Print($"[AI_Module_Entry] 皮卡鱼分析: {JsonSerializer.Serialize(moveRecord.PikafishAnalysis)}");
+                GD.Print($"[AI_Module_Entry] Move banter trigger: {moveRecord?.ChineseNotation}");
             }
 
-            _orchestrator?.HandleMovePlayed(moveRecord, session);
+            try
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                var safeMove = moveRecord ?? new MoveRecord();
+                var safeSession = session ?? new GameSession();
+
+                if (safeSession.IsGameOver)
+                {
+                    RaiseAIResponse("none", "no_response");
+                    return;
+                }
+
+                if (!BanterAgent.ShouldTriggerBanter())
+                {
+                    if (AI_Module_Config.DEBUG_MODE)
+                    {
+                        GD.Print("[AI_Module_Entry] Move banter skipped by probability.");
+                    }
+
+                    RaiseAIResponse("none", "no_response");
+                    return;
+                }
+
+                if (!AI_Module_Config.HasApiKey())
+                {
+                    RaiseAIResponse("error", ApiKeyRequiredMessage());
+                    return;
+                }
+
+                var response = await _banterAgent.ProcessMoveAsync(safeMove, safeSession);
+                RaiseAIResponse("banter", response);
+            }
+            catch (OperationCanceledException) when (_isExiting)
+            {
+            }
+            catch (ObjectDisposedException) when (_isExiting)
+            {
+            }
+            catch (Exception ex)
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                GD.PrintErr($"[AI_Module_Entry] Move banter failed: {ex.Message}");
+                RaiseAIResponse("error", BanterFailureMessage(ex));
+            }
         }
 
         public void OnMovePlayedJson(string moveRecordJson, string sessionJson)
@@ -152,14 +186,63 @@ namespace ChessAI.Module
             OnMovePlayed(moveRecord, session);
         }
 
-        public void OnUndoPerformed(GameSession session, int undoneCount, string undoneMoveText)
+        public async void OnUndoPerformed(GameSession session, int undoneCount, string undoneMoveText)
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 玩家悔棋: {undoneCount}; {undoneMoveText}");
+                GD.Print($"[AI_Module_Entry] Undo banter trigger: {undoneCount}; {undoneMoveText}");
             }
 
-            _orchestrator?.HandleUndoPerformed(session, undoneCount, undoneMoveText);
+            try
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                var safeSession = session ?? new GameSession();
+                if (safeSession.IsGameOver)
+                {
+                    RaiseAIResponse("none", "no_response");
+                    return;
+                }
+
+                if (!BanterAgent.ShouldTriggerBanter())
+                {
+                    if (AI_Module_Config.DEBUG_MODE)
+                    {
+                        GD.Print("[AI_Module_Entry] Undo banter skipped by probability.");
+                    }
+
+                    RaiseAIResponse("none", "no_response");
+                    return;
+                }
+
+                if (!AI_Module_Config.HasApiKey())
+                {
+                    RaiseAIResponse("error", ApiKeyRequiredMessage());
+                    return;
+                }
+
+                var response = await _banterAgent.ProcessUndoAsync(safeSession, undoneCount, undoneMoveText ?? "");
+                RaiseAIResponse("banter", response);
+            }
+            catch (OperationCanceledException) when (_isExiting)
+            {
+            }
+            catch (ObjectDisposedException) when (_isExiting)
+            {
+            }
+            catch (Exception ex)
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                GD.PrintErr($"[AI_Module_Entry] Undo banter failed: {ex.Message}");
+                RaiseAIResponse("error", BanterFailureMessage(ex));
+            }
         }
 
         public void OnUndoPerformedJson(string sessionJson, int undoneCount, string undoneMoveText)
@@ -168,18 +251,47 @@ namespace ChessAI.Module
             OnUndoPerformed(session, undoneCount, undoneMoveText);
         }
 
-        public void OnGameEnded(GameSession session, string result)
+        public async void OnGameEnded(GameSession session, string result)
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 游戏结束: {result}");
+                GD.Print($"[AI_Module_Entry] Review requested for finished game: {result}");
             }
 
-            session.EndTime = DateTime.Now;
-            session.GameStatus = AI_Module_Config.UseEnglishPrompts() ? "Finished" : "结束";
-            session.GameResult = result;
+            try
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
 
-            _orchestrator?.HandleGameEnded(session, result);
+                var safeSession = PrepareFinishedSession(session, result);
+
+                if (!AI_Module_Config.HasApiKey())
+                {
+                    RaiseAIResponse("error", ApiKeyRequiredMessage());
+                    return;
+                }
+
+                var review = await _reviewAgent.GenerateReviewAsync(safeSession, result ?? safeSession.GameResult);
+                RaiseReviewGenerated(review);
+            }
+            catch (OperationCanceledException) when (_isExiting)
+            {
+            }
+            catch (ObjectDisposedException) when (_isExiting)
+            {
+            }
+            catch (Exception ex)
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                GD.PrintErr($"[AI_Module_Entry] Review generation failed: {ex.Message}");
+                RaiseAIResponse("error", ReviewFailureMessage(ex));
+            }
         }
 
         public void OnGameEndedJson(string sessionJson, string result)
@@ -188,19 +300,38 @@ namespace ChessAI.Module
             OnGameEnded(session, result);
         }
 
-        public void ArchiveCurrentGameMemory(GameSession session, string result)
+        public async void ArchiveCurrentGameMemory(GameSession session, string result)
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 后台归档当前棋局记忆: {result}");
+                GD.Print($"[AI_Module_Entry] Archiving current game memory: {result}");
             }
 
-            session ??= new GameSession();
-            session.EndTime = DateTime.Now;
-            session.GameStatus = AI_Module_Config.UseEnglishPrompts() ? "Finished" : "结束";
-            session.GameResult = result;
+            try
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
 
-            _orchestrator?.ArchiveCurrentGameMemory(session, result);
+                var safeSession = PrepareFinishedSession(session, result);
+                await _reviewAgent.ArchiveCurrentGameMemoryAsync(safeSession, safeSession.GameResult);
+            }
+            catch (OperationCanceledException) when (_isExiting)
+            {
+            }
+            catch (ObjectDisposedException) when (_isExiting)
+            {
+            }
+            catch (Exception ex)
+            {
+                if (_isExiting)
+                {
+                    return;
+                }
+
+                GD.PrintErr($"[AI_Module_Entry] Background memory archive failed: {ex.Message}");
+            }
         }
 
         public void ArchiveCurrentGameMemoryJson(string sessionJson, string result)
@@ -211,7 +342,12 @@ namespace ChessAI.Module
 
         public bool IsModuleReady()
         {
-            return _orchestrator != null;
+            return _llmService != null &&
+                _promptLoader != null &&
+                _memoryService != null &&
+                _chatAgent != null &&
+                _banterAgent != null &&
+                _reviewAgent != null;
         }
 
         public bool SetApiKey(string apiKey)
@@ -220,8 +356,8 @@ namespace ChessAI.Module
             if (AI_Module_Config.DEBUG_MODE)
             {
                 GD.Print(saved && AI_Module_Config.HasApiKey()
-                    ? "[AI_Module_Entry] 已保存API Key"
-                    : "[AI_Module_Entry] API Key保存失败");
+                    ? "[AI_Module_Entry] API key saved."
+                    : "[AI_Module_Entry] API key save failed.");
             }
 
             return saved;
@@ -233,8 +369,8 @@ namespace ChessAI.Module
             if (AI_Module_Config.DEBUG_MODE)
             {
                 GD.Print(cleared
-                    ? "[AI_Module_Entry] 已清空本地API Key，将回退到环境变量"
-                    : "[AI_Module_Entry] 本地API Key清空失败");
+                    ? "[AI_Module_Entry] Local API key cleared."
+                    : "[AI_Module_Entry] Local API key clear failed.");
             }
 
             return cleared;
@@ -275,7 +411,7 @@ namespace ChessAI.Module
             AI_Module_Config.SetBanterPlayerSide(playerSide);
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 搭话Prompt阵营已切换: {AI_Module_Config.GetBanterPlayerSideName()}");
+                GD.Print($"[AI_Module_Entry] Banter side set to {AI_Module_Config.GetBanterPlayerSideName()}.");
             }
         }
 
@@ -284,7 +420,7 @@ namespace ChessAI.Module
             AI_Module_Config.SetChatPlayerSide(playerSide);
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 闲聊Prompt阵营已切换: {AI_Module_Config.GetChatPlayerSideName()}");
+                GD.Print($"[AI_Module_Entry] Chat side set to {AI_Module_Config.GetChatPlayerSideName()}.");
             }
         }
 
@@ -293,7 +429,7 @@ namespace ChessAI.Module
             AI_Module_Config.SetReviewPlayerSide(playerSide);
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print($"[AI_Module_Entry] 复盘Prompt阵营已切换: {AI_Module_Config.GetReviewPlayerSideName()}");
+                GD.Print($"[AI_Module_Entry] Review side set to {AI_Module_Config.GetReviewPlayerSideName()}.");
             }
         }
 
@@ -301,7 +437,7 @@ namespace ChessAI.Module
         {
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[AI_Module_Entry] TestAI OK");
+                GD.Print("[AI_Module_Entry] TestAI OK.");
             }
         }
 
@@ -318,6 +454,99 @@ namespace ChessAI.Module
             EmitSignal(SignalName.ReviewGeneratedReceived, reviewContent, reviewData);
         }
 
+        private GameSession PrepareFinishedSession(GameSession session, string result)
+        {
+            var safeSession = session ?? new GameSession();
+            safeSession.EndTime = DateTime.Now;
+            safeSession.GameStatus = AI_Module_Config.UseEnglishPrompts() ? "Finished" : "\u7ed3\u675f";
+            safeSession.GameResult = string.IsNullOrWhiteSpace(result) ? safeSession.GameResult : result;
+            return safeSession;
+        }
+
+        private void RaiseAIResponse(string responseType, string content)
+        {
+            if (_isExiting || !IsInsideTree())
+            {
+                return;
+            }
+
+            var args = new AIResponseEventArgs
+            {
+                ResponseType = responseType,
+                Content = content ?? "",
+                ShowInUI = true
+            };
+
+            if (AI_Module_Config.DEBUG_MODE)
+            {
+                GD.Print($"[AI_Module_Entry] AI response: {args.ResponseType}");
+            }
+
+            if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
+            {
+                GD.Print($"[AI_Module_Entry] Content: {args.Content}");
+            }
+
+            OnAIResponse?.Invoke(this, args);
+            CallDeferred(nameof(EmitAiResponseSignal), args.ResponseType, args.Content);
+        }
+
+        private void RaiseReviewGenerated(ReviewAgent.ReviewResult result)
+        {
+            if (_isExiting || !IsInsideTree() || result == null)
+            {
+                return;
+            }
+
+            var args = new ReviewGeneratedEventArgs
+            {
+                ReviewContent = result.Content ?? "",
+                ReviewData = result.JsonData ?? "",
+                CriticalMistakes = result.CriticalMistakes ?? Array.Empty<string>()
+            };
+
+            if (AI_Module_Config.DEBUG_MODE)
+            {
+                GD.Print("[AI_Module_Entry] Review generated.");
+            }
+
+            if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
+            {
+                GD.Print($"[AI_Module_Entry] Review content: {args.ReviewContent}");
+            }
+
+            OnReviewGenerated?.Invoke(this, args);
+            CallDeferred(nameof(EmitReviewGeneratedSignal), args.ReviewContent, args.ReviewData);
+        }
+
+        private static string ApiKeyRequiredMessage()
+        {
+            return AI_Module_Config.UseEnglishPrompts()
+                ? "Please enter an API key first."
+                : "\u8bf7\u5148\u586b\u5199 API Key\u3002";
+        }
+
+        private static string GenericFailureMessage()
+        {
+            return AI_Module_Config.UseEnglishPrompts()
+                ? "Sorry, something went wrong. Please try again later."
+                : "\u62b1\u6b49\uff0c\u6211\u9047\u5230\u4e86\u4e00\u4e9b\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002";
+        }
+
+        private static string BanterFailureMessage(Exception ex)
+        {
+            return AI_Module_Config.UseEnglishPrompts()
+                ? $"AI banter request failed: {ex.Message}"
+                : $"AI\u642d\u8bdd\u8bf7\u6c42\u5931\u8d25: {ex.Message}";
+        }
+
+        private static string ReviewFailureMessage(Exception ex)
+        {
+            return AI_Module_Config.UseEnglishPrompts()
+                ? $"AI review request failed: {ex.Message}"
+                : $"AI\u590d\u76d8\u8bf7\u6c42\u5931\u8d25: {ex.Message}";
+        }
+
         private GameSession DeserializeSession(string sessionJson)
         {
             if (string.IsNullOrWhiteSpace(sessionJson))
@@ -328,16 +557,11 @@ namespace ChessAI.Module
             GameSession session;
             try
             {
-                if (string.IsNullOrWhiteSpace(sessionJson))
-                {
-                    return new GameSession();
-                }
-
                 session = JsonSerializer.Deserialize<GameSession>(sessionJson, _jsonOptions) ?? new GameSession();
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[AI_Module_Entry] 会话JSON解析失败: {ex.Message}");
+                GD.PrintErr($"[AI_Module_Entry] Session JSON parse failed: {ex.Message}");
                 session = new GameSession();
             }
 
@@ -364,7 +588,7 @@ namespace ChessAI.Module
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[AI_Module_Entry] 走法JSON解析失败: {ex.Message}");
+                GD.PrintErr($"[AI_Module_Entry] Move JSON parse failed: {ex.Message}");
                 return new MoveRecord();
             }
         }
@@ -614,8 +838,9 @@ namespace ChessAI.Module
         public override void _ExitTree()
         {
             _isExiting = true;
-            _orchestrator?.Dispose();
-            _orchestrator = null;
+            _chatAgent = null;
+            _banterAgent = null;
+            _reviewAgent = null;
             _llmService?.Dispose();
             _llmService = null;
             _promptLoader = null;
@@ -625,7 +850,7 @@ namespace ChessAI.Module
 
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[AI_Module_Entry] AI模块退出");
+                GD.Print("[AI_Module_Entry] AI module exited.");
             }
         }
     }

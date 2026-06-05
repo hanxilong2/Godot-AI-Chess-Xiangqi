@@ -1,7 +1,5 @@
 using Godot;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -9,46 +7,6 @@ using System.Threading.Tasks;
 
 namespace ChessAI.Module.Services
 {
-    public sealed class ChatToolDefinition
-    {
-        public ChatToolDefinition(string name, string description, object parameters)
-        {
-            Name = name;
-            Description = description;
-            Parameters = parameters;
-        }
-
-        public string Name { get; }
-        public string Description { get; }
-        public object Parameters { get; }
-
-        public object ToApiShape()
-        {
-            return new
-            {
-                type = "function",
-                function = new
-                {
-                    name = Name,
-                    description = Description,
-                    parameters = Parameters
-                }
-            };
-        }
-    }
-
-    public sealed class ToolCallDecision
-    {
-        public string ToolName { get; set; } = "";
-        public string ArgumentsJson { get; set; } = "";
-        public string Content { get; set; } = "";
-
-        public bool HasToolCall => !string.IsNullOrWhiteSpace(ToolName);
-    }
-
-    /// <summary>
-    /// LLM API service. Wraps OpenAI-compatible DashScope chat completions.
-    /// </summary>
     public class LlmApiService : IDisposable
     {
         private readonly System.Net.Http.HttpClient _httpClient;
@@ -75,7 +33,7 @@ namespace ChessAI.Module.Services
 
             if (AI_Module_Config.DEBUG_MODE)
             {
-                GD.Print("[LlmApiService] Sending chat completion request...");
+                GD.Print("[LlmApiService] Sending chat completion request.");
                 GD.Print($"[LlmApiService] Model: {modelName ?? AI_Module_Config.MODEL_NAME}");
             }
 
@@ -117,75 +75,13 @@ namespace ChessAI.Module.Services
                     {
                         var message = AI_Module_Config.UseEnglishPrompts()
                             ? $"API request failed after {AI_Module_Config.API_RETRY_COUNT} retries"
-                            : $"API请求失败，已重试{AI_Module_Config.API_RETRY_COUNT}次";
+                            : $"API\u8bf7\u6c42\u5931\u8d25\uff0c\u5df2\u91cd\u8bd5{AI_Module_Config.API_RETRY_COUNT}\u6b21";
                         throw new Exception(message, ex);
                     }
                 }
             }
 
             return "";
-        }
-
-        public async Task<ToolCallDecision> SelectToolAsync(
-            string systemPrompt,
-            string userPrompt,
-            IReadOnlyList<ChatToolDefinition> tools,
-            string modelName = null,
-            int maxTokens = -1)
-        {
-            ThrowIfDisposed();
-
-            if (tools == null || tools.Count == 0)
-            {
-                throw new ArgumentException("At least one tool definition is required.", nameof(tools));
-            }
-
-            if (AI_Module_Config.DEBUG_MODE)
-            {
-                GD.Print("[LlmApiService] Sending tool-selection request...");
-                GD.Print($"[LlmApiService] Model: {modelName ?? AI_Module_Config.AGENT_MODEL}");
-                GD.Print($"[LlmApiService] Tools: {string.Join(", ", tools.Select(tool => tool.Name))}");
-            }
-
-            if (AI_Module_Config.VERBOSE_CONTENT_LOGGING)
-            {
-                GD.Print($"[LlmApiService] User Prompt: {Preview(userPrompt)}");
-            }
-
-            for (int retry = 0; retry < AI_Module_Config.API_RETRY_COUNT; retry++)
-            {
-                try
-                {
-                    return await SendToolSelectionRequestAsync(systemPrompt, userPrompt, tools, modelName, maxTokens, _shutdownCts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    GD.PrintErr($"[LlmApiService] Tool-selection request failed ({retry + 1}/{AI_Module_Config.API_RETRY_COUNT}): {ex.Message}");
-
-                    if (IsConfigurationError(ex))
-                    {
-                        throw;
-                    }
-
-                    if (retry < AI_Module_Config.API_RETRY_COUNT - 1)
-                    {
-                        await Task.Delay(AI_Module_Config.API_RETRY_DELAY_MS, _shutdownCts.Token);
-                    }
-                    else
-                    {
-                        var message = AI_Module_Config.UseEnglishPrompts()
-                            ? $"Tool-selection request failed after {AI_Module_Config.API_RETRY_COUNT} retries"
-                            : $"Agent工具选择请求失败，已重试{AI_Module_Config.API_RETRY_COUNT}次";
-                        throw new Exception(message, ex);
-                    }
-                }
-            }
-
-            return new ToolCallDecision();
         }
 
         public void Dispose()
@@ -209,7 +105,12 @@ namespace ChessAI.Module.Services
             }
         }
 
-        private async Task<string> SendRequestAsync(string systemPrompt, string userPrompt, string modelName = null, int maxTokens = -1, CancellationToken cancellationToken = default)
+        private async Task<string> SendRequestAsync(
+            string systemPrompt,
+            string userPrompt,
+            string modelName = null,
+            int maxTokens = -1,
+            CancellationToken cancellationToken = default)
         {
             var requestBody = new
             {
@@ -232,65 +133,6 @@ namespace ChessAI.Module.Services
             }
 
             throw UnexpectedFormatException();
-        }
-
-        private async Task<ToolCallDecision> SendToolSelectionRequestAsync(
-            string systemPrompt,
-            string userPrompt,
-            IReadOnlyList<ChatToolDefinition> tools,
-            string modelName = null,
-            int maxTokens = -1,
-            CancellationToken cancellationToken = default)
-        {
-            var requestBody = new
-            {
-                model = modelName ?? AI_Module_Config.AGENT_MODEL,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                tools = tools.Select(tool => tool.ToApiShape()).ToArray(),
-                tool_choice = "auto",
-                temperature = AI_Module_Config.AGENT_TEMPERATURE,
-                max_tokens = maxTokens > 0 ? maxTokens : AI_Module_Config.AGENT_MAX_TOKENS,
-                enable_thinking = false,
-                stream = false
-            };
-
-            var responseData = await SendChatRequestAsync(requestBody, cancellationToken);
-            if (responseData?.Choices?.Length <= 0 || responseData.Choices[0].Message == null)
-            {
-                throw UnexpectedFormatException();
-            }
-
-            var message = responseData.Choices[0].Message;
-            var cleanContent = StripThinkingBlocks(message.Content ?? "");
-            var toolCall = message.ToolCalls?.FirstOrDefault(call => call?.Function != null);
-            if (toolCall?.Function != null)
-            {
-                return new ToolCallDecision
-                {
-                    ToolName = toolCall.Function.Name ?? "",
-                    ArgumentsJson = ReadArgumentsJson(toolCall.Function.Arguments),
-                    Content = cleanContent
-                };
-            }
-
-            if (message.FunctionCall != null)
-            {
-                return new ToolCallDecision
-                {
-                    ToolName = message.FunctionCall.Name ?? "",
-                    ArgumentsJson = ReadArgumentsJson(message.FunctionCall.Arguments),
-                    Content = cleanContent
-                };
-            }
-
-            return new ToolCallDecision
-            {
-                Content = cleanContent
-            };
         }
 
         private async Task<ApiResponse> SendChatRequestAsync(object requestBody, CancellationToken cancellationToken)
@@ -320,22 +162,11 @@ namespace ChessAI.Module.Services
             {
                 var message = AI_Module_Config.UseEnglishPrompts()
                     ? $"API returned an error: {(int)response.StatusCode} {response.ReasonPhrase}; {responseContent}"
-                    : $"API返回错误: {(int)response.StatusCode} {response.ReasonPhrase}; {responseContent}";
+                    : $"API\u8fd4\u56de\u9519\u8bef: {(int)response.StatusCode} {response.ReasonPhrase}; {responseContent}";
                 throw new Exception(message);
             }
 
             return JsonSerializer.Deserialize<ApiResponse>(responseContent, _jsonOptions);
-        }
-
-        private static string ReadArgumentsJson(JsonElement arguments)
-        {
-            return arguments.ValueKind switch
-            {
-                JsonValueKind.String => arguments.GetString() ?? "",
-                JsonValueKind.Undefined => "",
-                JsonValueKind.Null => "",
-                _ => arguments.GetRawText()
-            };
         }
 
         private static string Preview(string text)
@@ -379,12 +210,12 @@ namespace ChessAI.Module.Services
         {
             return new Exception(AI_Module_Config.UseEnglishPrompts()
                 ? "API returned an unexpected data format"
-                : "API返回的数据格式不正确");
+                : "API\u8fd4\u56de\u7684\u6570\u636e\u683c\u5f0f\u4e0d\u6b63\u786e");
         }
 
         private static bool IsConfigurationError(Exception ex)
         {
-            return ex.Message.StartsWith("API密钥", StringComparison.Ordinal) ||
+            return ex.Message.StartsWith("API\u5bc6\u94a5", StringComparison.Ordinal) ||
                 ex.Message.StartsWith("API key", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -401,20 +232,6 @@ namespace ChessAI.Module.Services
         private sealed class Message
         {
             public string Content { get; set; }
-            public ToolCall[] ToolCalls { get; set; }
-            public FunctionCall FunctionCall { get; set; }
-        }
-
-        private sealed class ToolCall
-        {
-            public string Type { get; set; }
-            public FunctionCall Function { get; set; }
-        }
-
-        private sealed class FunctionCall
-        {
-            public string Name { get; set; }
-            public JsonElement Arguments { get; set; }
         }
     }
 }

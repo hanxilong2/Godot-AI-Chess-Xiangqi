@@ -1,7 +1,6 @@
 extends RefCounted
 class_name XiangqiState
 
-const NativeStateScript := preload("res://resource/xiangqi/src/XiangqiNativeState.cs")
 const NATIVE_STATE_CPP_CLASS := &"XiangqiNativeStateCpp"
 
 var native_state: RefCounted = null
@@ -145,8 +144,11 @@ func _sync_mirror_from_native() -> void:
 	fullmove_number = int(native_state.call("get_fullmove_number"))
 
 func _create_native_state() -> RefCounted:
-	if ClassDB.class_exists(NATIVE_STATE_CPP_CLASS):
-		var cpp_state := ClassDB.instantiate(NATIVE_STATE_CPP_CLASS) as RefCounted
-		if cpp_state != null:
-			return cpp_state
-	return NativeStateScript.new()
+	if !ClassDB.class_exists(NATIVE_STATE_CPP_CLASS):
+		push_error("Required native class XiangqiNativeStateCpp is not registered. Rebuild or load siamese.gdextension.")
+		return null
+
+	var cpp_state := ClassDB.instantiate(NATIVE_STATE_CPP_CLASS) as RefCounted
+	if cpp_state == null:
+		push_error("Failed to instantiate XiangqiNativeStateCpp from siamese.gdextension.")
+	return cpp_state

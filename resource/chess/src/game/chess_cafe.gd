@@ -35,7 +35,6 @@ var standard_history_zobrist:PackedInt64Array = []
 var standard_history_state:Array[State] = []
 var standard_history_event:Array[Dictionary] = []
 var standard_history_move:PackedInt32Array = []
-@onready var standard_history_document:Document = load("res://scene/doc/history.tscn").instantiate()
 var standard_engine:ChessEngine = PastorEngine.new()
 var standard_state_machine:StateMachine = StateMachine.new()
 var chessboard_state:String = ""
@@ -93,9 +92,6 @@ func _exit_tree() -> void:
 	if standard_engine != null:
 		standard_engine.stop_search()
 		standard_engine = null
-	if is_instance_valid(standard_history_document):
-		standard_history_document.free()
-		standard_history_document = null
 	standard_history_zobrist.clear()
 	standard_history_state.clear()
 	standard_history_event.clear()
@@ -127,8 +123,6 @@ func _ready() -> void:
 	standard_clock_reset()
 	add_child(standard_state_machine)
 	standard_state_machine.name = "standard"
-	standard_history_document.set_filename("history.match_with_yulan.json")
-	standard_history_document.load_file()
 	Ambient.change_environment_sound(load("res://assets/audio/52645__kstein1__white-noise.wav"))
 	var cheshire_by:int = get_meta("by")
 	var cheshire_instance:Actor = load("res://scene/actor/cheshire.tscn").instantiate()
@@ -825,8 +819,6 @@ func state_ready_in_game_start(_arg:Dictionary) -> void:
 	standard_history_event.clear()
 	standard_history_move.clear()
 	standard_initial_state = $table_0/chessboard_standard.state.duplicate()
-	standard_history_document.new_page()
-	standard_history_document.set_state($table_0/chessboard_standard.state)
 	standard_show_review_tools(true)
 	standard_refresh_review_tools(tr("MATCH_GAME_ACTIVE"))
 	if $table_0/chessboard_standard.state.get_turn() != standard_player_group:
@@ -872,7 +864,6 @@ func state_ready_in_game_move(_arg:Dictionary) -> void:
 	standard_clock_add_increment(moved_group)
 	standard_state_machine.state_signal_connect($table_0/chessboard_standard.click_selection, game_premove_pressed)
 	standard_state_machine.state_signal_connect($table_0/chessboard_standard.click_empty, game_premove_cancel)
-	standard_history_document.push_move(_arg["move"])
 	standard_history_state.push_back($table_0/chessboard_standard.state.duplicate())
 	standard_history_zobrist.push_back($table_0/chessboard_standard.state.get_zobrist())
 	standard_history_move.push_back(_arg["move"])
@@ -928,7 +919,6 @@ func standard_undo_turn() -> void:
 	standard_history_state.resize(standard_history_state.size() - 2)
 	standard_history_event.resize(standard_history_event.size() - 2)
 	standard_history_move.resize(standard_history_move.size() - 2)
-	standard_history_document.rollback($table_0/chessboard_standard.state, 2)
 	await $table_0/chessboard_standard.animation_finished
 	standard_undo_in_progress = false
 	if !standard_match_active || standard_game_over:
@@ -1038,7 +1028,6 @@ func state_ready_game_end(_arg:Dictionary) -> void:
 	standard_clock_exit_view(true)
 	if $player != null:
 		$player.can_move = false
-	standard_history_document.save_file()
 	Dialog.clear()
 	$table_0/chessboard_standard.set_enabled(false)
 	$table_0/chessboard_standard.set_square_selection(0)
@@ -1072,7 +1061,6 @@ func standard_leave_game() -> void:
 	standard_set_api_key_screen_visible(false)
 	standard_show_review_tools(false)
 	standard_reset_ai_io_paper()
-	standard_history_document.save_file()
 	$table_0/chessboard_standard.set_enabled(false)
 	$table_0/chessboard_standard.set_square_selection(0)
 	$table_0/chessboard_standard.clear_pointer("premove")

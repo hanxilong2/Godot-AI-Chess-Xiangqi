@@ -54,11 +54,6 @@ namespace ChessAI.Module
         public const string REVIEW_MODEL = "qwen3.5-plus";
 
         /// <summary>
-        /// Agent工具选择模型名称。
-        /// </summary>
-        public const string AGENT_MODEL = "qwen3.5-flash";
-
-        /// <summary>
         /// 模型名称（默认使用聊天模型）
         /// </summary>
         public const string MODEL_NAME = CHAT_MODEL;
@@ -131,16 +126,6 @@ namespace ChessAI.Module
         /// 主动搭话回复最大生成token数。搭话提示需要保持在50到100个汉字。
         /// </summary>
         public const int BANTER_MAX_TOKENS = 180;
-
-        /// <summary>
-        /// Agent工具选择最大生成token数。
-        /// </summary>
-        public const int AGENT_MAX_TOKENS = 256;
-
-        /// <summary>
-        /// Agent工具选择温度。工具选择应比具体回复更稳定。
-        /// </summary>
-        public const double AGENT_TEMPERATURE = 0.2;
 
         /// <summary>
         /// 红方阵营编号。
@@ -512,20 +497,5 @@ namespace ChessAI.Module
             }
         }
 
-        /// <summary>
-        /// 获取聊天系统Prompt文件路径
-        /// </summary>
-        public static string GetChatPromptPath() => PROMPT_FOLDER_PATH + GetChatPromptFileName();
-
-        /// <summary>
-        /// 获取搭话系统Prompt文件路径
-        /// </summary>
-        public static string GetBanterPromptPath() => PROMPT_FOLDER_PATH + GetBanterPromptFileName();
-
-
-        /// <summary>
-        /// 获取复盘系统Prompt文件路径
-        /// </summary>
-        public static string GetReviewPromptPath() => PROMPT_FOLDER_PATH + GetReviewPromptFileName();
     }
 }

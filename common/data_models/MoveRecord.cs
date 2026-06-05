@@ -136,16 +136,6 @@ namespace ChessAI.DataModels
         }
 
         /// <summary>
-        /// 从字典创建MoveRecord（用于JSON反序列化）
-        /// </summary>
-        public static MoveRecord FromDictionary(object data)
-        {
-            // 这里需要根据实际的JSON结构来实现
-            // 暂时返回空对象
-            return new MoveRecord();
-        }
-
-        /// <summary>
         /// 获取棋子显示名称
         /// </summary>
         private static string GetPieceDisplayName(string piece)
